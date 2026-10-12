@@ -88,6 +88,12 @@ The green LED represents a separate safety-controlled channel. It remains active
 
 ## Building and Running
 
+### Phone USB test page
+
+The `docs/` folder contains a phone-friendly USB test page with Connect, START, STOP, STATUS, and a board response log. See [setup and testing instructions](docs/README.md). To preview on this computer, run `node tools/serve-web.mjs` and open `http://localhost:8080`. Phone access requires HTTPS hosting.
+
+### Firmware
+
 1. Open the project in VS Code with PlatformIO.
 2. Select `Espressif ESP32 Dev Module` (`esp32dev`) and the Arduino framework.
 3. Connect the ESP32 using a USB data cable.

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142a2a">
+  <title>ESP32 · USB test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">LED LAB / 01</span><span class="chip">USB CONNECTION TEST</span></header>
+    <h1>A direct line<br>to your ESP32.</h1>
+    <p class="intro">Connect your board, send a command, and see its response.</p>
+    <section class="panel" aria-labelledby="connection-title">
+      <div class="section-head"><h2 id="connection-title">01 / Connection</h2><span id="badge" class="badge">Disconnected</span></div>
+      <p>NodeMCU ESP-32S <span class="muted">/ CP2102 / 115200 baud</span></p>
+      <label for="transport">Connection method</label>
+      <select id="transport"><option value="usb">Android phone · WebUSB</option><option value="serial">Computer · Web Serial</option></select>
+      <div class="row"><button id="connect" class="primary">Connect board <span aria-hidden="true">↗</span></button><button id="disconnect" disabled>Disconnect</button></div>
+      <p id="notice" role="status">Connect the board using a USB data cable, then tap Connect board.</p>
+    </section>
+    <section class="panel" aria-labelledby="commands-title">
+      <div class="section-head"><h2 id="commands-title">02 / Commands</h2><span class="muted">115200 · 8N1</span></div>
+      <div class="commands"><button data-command="START" class="primary" disabled>START<small>Run LED sequence</small></button><button data-command="STOP" class="stop" disabled>STOP<small>All LEDs off</small></button><button data-command="STATUS" disabled>STATUS<small>Read board state</small></button></div>
+      <p class="hint">The sequence lasts about 4.38 seconds. Outputs turn off after 5 seconds without a command. STATUS resets that timer; this page never polls automatically.</p>
+    </section>
+    <section class="panel console-panel" aria-labelledby="log-title">
+      <div class="section-head"><h2 id="log-title">03 / Board log</h2><button id="clear" class="text-button">Clear log</button></div>
+      <pre id="log" role="log" aria-live="polite" aria-label="USB command and response log">Ready when you are.
+</pre>
+    </section>
+    <details><summary>First connection? Start here.</summary><ol><li>Upload the existing PlatformIO firmware to the board.</li><li>On your phone, open this page over HTTPS in Chrome. Connect the ESP32 with your data cable or OTG adapter.</li><li>Tap Connect board, select CP2102, and accept the USB permission prompt.</li><li>Tap STATUS. Look for “Sequence: IDLE” and “Safety: OFF”. Then try START and STOP.</li></ol><p>If no device appears, check the data cable and phone USB/OTG settings. Close other serial apps. On a computer, select Web Serial and close the PlatformIO serial monitor.</p><p>Disconnect closes the connection; it does not send STOP. Use STOP first to switch the LEDs off immediately. Otherwise, the firmware timeout still applies.</p></details>
+    <footer>Commands travel over the cable. No account, no server relay.</footer>
+  </main>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>
