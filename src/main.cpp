@@ -5,44 +5,19 @@
 const uint8_t LED_PINS[] = {16, 17, 18}; // A, B, C; active-high outputs.
 const uint32_t PWM_FREQUENCY = 5000;
 SequenceController sequence;
-SimulatedSensor simulatedSensor;
+uint16_t simulatedSensorValue = 1000;
 CommandBuffer commandBuffer;
 uint8_t previousDuty[3] = {};
 bool pwmReady = true;
 
-// Queue messages so serial output cannot hold up timing or safety checks.
-const uint8_t LOG_CAPACITY = 12;
-char logLines[LOG_CAPACITY][128];
-uint8_t logHead = 0, logCount = 0;
-size_t logOffset = 0;
-
+// Print only command responses and state changes, never continuously in loop().
 void report(const char* format, ...) {
-    // Drop new messages if full rather than waiting for the host.
-    if (logCount == LOG_CAPACITY) return;
-    char* message = logLines[(logHead + logCount) % LOG_CAPACITY];
+    char message[128];
     va_list args;
     va_start(args, format);
-    vsnprintf(message, sizeof(logLines[0]) - 1, format, args);
+    vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    strcat(message, "\n");
-    ++logCount;
-}
-void flushLog() {
-    if (!logCount) return;
-    const int available = Serial.availableForWrite();
-    if (available <= 0) return;
-
-    // Send only what fits; resume a partial line on the next loop.
-    const char* message = logLines[logHead];
-    const size_t length = strlen(message);
-    const size_t remaining = length - logOffset;
-    const size_t amount = remaining < size_t(available) ? remaining : size_t(available);
-    logOffset += Serial.write(reinterpret_cast<const uint8_t*>(message + logOffset), amount);
-    if (logOffset == length) {
-        logOffset = 0;
-        logHead = (logHead + 1) % LOG_CAPACITY;
-        --logCount;
-    }
+    Serial.println(message);
 }
 void applyOutputs(uint32_t now) {
     for (uint8_t i = 0; i < 3; ++i) {
@@ -54,7 +29,7 @@ void applyOutputs(uint32_t now) {
 }
 void sampleSafety(uint32_t now) {
     const bool wasUnsafe = sequence.unsafe;
-    const bool tripped = sequence.sample(now, simulatedSensor.read(sequence, now));
+    const bool tripped = sequence.sample(now, simulatedSensorValue);
     // Apply the cutoff before reporting it to the host.
     applyOutputs(now);
     if (tripped) report("SAFETY CUTOFF: sensor=%u threshold=%u; all LEDs OFF", sequence.sensorValue, SequenceController::SAFETY_THRESHOLD);
@@ -73,24 +48,17 @@ void handleCommand(const char* text) {
         // Never start using a stale safety reading.
         sampleSafety(now);
         if (!pwmReady) report("ERR: PWM setup failed; restart the board");
-        else if (sequence.unsafe) report("ERR: unsafe input; reset safety test before starting");
-        else if (!sequence.start(now, command.intensity)) report("ERR: sequence already running; use STOP first");
+        else if (sequence.unsafe) report("ERR: unsafe input; set sensor below 2500 before starting");
+        else if (!sequence.start(now, command.value)) report("ERR: sequence already running; use STOP first");
         else {
             applyOutputs(now);
-            report("OK: START_SEQUENCE intensity=%u; A=0 B=400 C=900 OFF=2000 ms", command.intensity);
+            report("OK: START_SEQUENCE intensity=%u; A=0 B=400 C=900 OFF=2000 ms", command.value);
         }
         break;
-    case Commands::ArmSafety:
-    case Commands::ResetSafety:
-        if (sequence.running) { report("ERR: use STOP before changing the safety test"); break; }
-        if (command.kind == Commands::ArmSafety) {
-            if (simulatedSensor.high) { report("ERR: reset the safety test first"); break; }
-            simulatedSensor.armed = true;
-            report("OK: safety test ARMED; input rises 1200 ms into the next sequence");
-        } else {
-            simulatedSensor.reset(); sampleSafety(now);
-            report("OK: safety test OFF; simulated input=1000");
-        }
+    case Commands::SetSensor:
+        // Change the input only; the periodic safety check decides whether to stop.
+        simulatedSensorValue = command.value;
+        report("OK: sensor input=%u", simulatedSensorValue);
         break;
     default:
         report("ERR: invalid command or parameter");
@@ -134,5 +102,4 @@ void loop() {
     updateController();
     readCommands();
     updateController();
-    flushLog();
 }

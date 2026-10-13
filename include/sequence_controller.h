@@ -42,29 +42,25 @@ public:
     }
 };
 
-// An armed test raises the input at 1.2 s without another host command.
-// Keep the input high after cutoff until reset, preventing an unsafe restart.
-class SimulatedSensor {
-public:
-    bool armed = false;
-    bool high = false;
-    uint16_t read(const SequenceController& sequence, uint32_t now) {
-        if (armed && sequence.running && sequence.elapsed(now) >= 1200) high = true;
-        return high ? 3000 : 1000;
-    }
-    void reset() { armed = false; high = false; }
-};
-
-enum class Commands { Start, Stop, ArmSafety, ResetSafety, Invalid };
+enum class Commands { Start, Stop, SetSensor, Invalid };
 struct Command {
     Commands kind;
-    uint8_t intensity;
-    Command(Commands value, uint8_t level = 5) : kind(value), intensity(level) {}
+    uint16_t value;
+    Command(Commands command, uint16_t argument = 5) : kind(command), value(argument) {}
 };
 inline Command parseCommand(const char* text) {
     if (strcmp(text, "STOP") == 0) return {Commands::Stop};
-    if (strcmp(text, "SAFETY_TEST ON") == 0) return {Commands::ArmSafety};
-    if (strcmp(text, "SAFETY_TEST OFF") == 0) return {Commands::ResetSafety};
+    if (strncmp(text, "SET_SENSOR ", 11) == 0) {
+        const char* digits = text + 11;
+        if (*digits == '\0') return {Commands::Invalid};
+        uint16_t value = 0;
+        for (uint8_t i = 0; digits[i] != '\0'; ++i) {
+            if (i >= 4 || digits[i] < '0' || digits[i] > '9') return {Commands::Invalid};
+            value = value * 10 + (digits[i] - '0');
+            if (value > 4095) return {Commands::Invalid};
+        }
+        return {Commands::SetSensor, value};
+    }
     if (strcmp(text, "START_SEQUENCE") == 0) return {Commands::Start, 5};
     const char prefix[] = "START_SEQUENCE ";
     const size_t length = sizeof(prefix) - 1;

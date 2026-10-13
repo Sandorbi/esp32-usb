@@ -33,26 +33,25 @@ Firmware must be uploaded to the ESP32. Pushing to GitHub only updates repositor
 | `START_SEQUENCE` | Start once, default intensity 5 |
 | `START_SEQUENCE 1` … `START_SEQUENCE 5` | Start at 20%, 40%, 60%, 80%, or 100% PWM duty |
 | `STOP` | Immediately switch all three outputs off; safe to repeat |
-| `SAFETY_TEST ON` | Arm the automatic simulated sensor rise for subsequent sequences |
-| `SAFETY_TEST OFF` | Disarm and reset the simulated sensor to 1000 |
+| `SET_SENSOR 0` … `SET_SENSOR 4095` | Set the simulated input; the periodic check handles the cutoff |
 
-New starts while running are rejected, so commands cannot extend the sequence indefinitely. STOP does not clear an unsafe reading. Changing the safety test while running is rejected; STOP first.
+New starts while running are rejected, so commands cannot extend the sequence indefinitely. STOP does not clear an unsafe reading. SET_SENSOR is accepted while idle or running; it changes only the stored input, without stopping the sequence or resetting the sampling timer. Values must contain one to four decimal digits and be between 0 and 4095. Invalid input leaves the previous value unchanged.
 
-Responses include `OK:`, `ERR:`, and `SAFETY CUTOFF:`. Messages enter a bounded queue after output changes. Each loop sends only as many bytes as the serial buffer has room for, so logging does not wait for buffer space. If the 12-message queue fills, new messages are dropped while output control continues. Browser log arrival times include USB buffering and are not precise output-timing measurements.
+Responses include `OK:`, `ERR:`, and `SAFETY CUTOFF:`. Short messages print directly on commands and state changes; there is no logging queue or continuous sensor logging. Outputs are changed before STOP/cutoff responses are printed. Serial printing can briefly wait for transmit-buffer space; the firmware returns to timing and safety checks after each command. Browser log arrival times include USB buffering and are not precise output-timing measurements.
 
 The project pins Espressif32 platform 6.12.0 and uses its Arduino-ESP32 2.x channel-based PWM API.
 
 ## Safety demonstration — no sensor needed
 
-Default firmware uses fixed simulated readings, allowed by the capability brief. It samples every 200 ms, even while idle, plus a fresh sample before an accepted start. The unsafe threshold is **value >= 2500** on a 0–4095 scale. These are test units, not temperature.
+The firmware starts with a simulated reading of 1000, adjustable through the app or terminal. It samples every 200 ms, even while idle, plus a fresh sample before a start attempt when idle. The unsafe threshold is **value >= 2500** on a 0–4095 scale. These are test units, not temperature.
 
-1. Run a normal sequence with `START_SEQUENCE 5`. All LEDs switch off at 2 seconds.
-2. Send `SAFETY_TEST ON`, then `START_SEQUENCE 5`.
-3. Send nothing else. At 1200 ms into the sequence the simulated input becomes 3000. The next 200 ms safety check switches all outputs off and reports `SAFETY CUTOFF`.
+1. Send `SET_SENSOR 1000`, then `START_SEQUENCE 5`. All LEDs switch off at 2 seconds.
+2. Start again. While the LEDs are on, send `SET_SENSOR 3000` (or tap **Set high · 3000**).
+3. Send nothing else. The next periodic check switches all outputs off and reports `SAFETY CUTOFF`. Do not send STOP for this demonstration.
 4. A further START is rejected while the input remains high.
-5. Send `SAFETY_TEST OFF` to return the input to 1000. Restart explicitly when ready.
+5. Send `SET_SENSOR 1000` to restore a safe input. Outputs stay off until a new START command.
 
-The phone only arms the test. The sensor rise and cutoff happen on the ESP32 without a timed phone message. Under normal operation the demo trips around 1200 ms, with up to one 200 ms sampling period of latency. Reset/disarm before recording a normal sequence again.
+The phone supplies the simulated reading. The ESP32 independently schedules the sampling, compares the threshold, and turns off the outputs; the app does not send an automatic STOP. Cutoff occurs at the next sample, nominally within 200 ms of accepting the new input, plus loop/serial processing time. The last value remains in effect until changed or the board restarts. This demonstrates the software safety path, not a physical sensor or real thermal protection.
 
 ## Phone app
 
@@ -62,6 +61,8 @@ The phone only arms the test. The sensor rise and cutoff happen on the ESP32 wit
 
 - Build: `pio run -e esp32dev`.
 - Verify physical timing within ±50 ms, STOP, and the simulated cutoff on the board.
+
+For the assessment video, show a normal run, STOP during a separate run, then a high sensor input during a third run. Check timing using a 60 fps recording or logic analyzer rather than browser log timestamps. Check STOP before LED B, after LED C, and while idle. Demonstrate that unsafe input rejects START and that lowering the value does not restart outputs automatically. Repeat cable commands and reconnection to check reliability. In the written note, describe the simulated input, the checks actually performed, observed results, and any difficulties honestly; a successful build alone does not verify hardware timing.
 
 The full product's heater controls, physical emergency-stop circuit, calibrated thermal sensing, app modes, and multi-unit flashing tool are outside this capability test.
 

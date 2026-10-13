@@ -28,9 +28,12 @@
     </section>
     <section class="panel" aria-labelledby="safety-title">
       <div class="section-head"><h2 id="safety-title">Safety demonstration</h2><span class="muted">Checked every 200 ms</span></div>
-      <p class="hint">Tap Arm safety test, then START. The board raises its simulated sensor value from 1000 to 3000 at 1.2 seconds and cuts off the LEDs at the next safety check. No further phone command is needed.</p>
-      <div class="row safety-controls"><button data-command="SAFETY_TEST ON" disabled>Arm safety test</button><button data-command="SAFETY_TEST OFF" disabled>Reset safety test</button></div>
-      <p class="hint">Cutoff threshold: 2500 (simulated units, not temperature). After a cutoff, reset the test before starting again.</p>
+      <p class="hint">Set a simulated sensor reading manually. The ESP32 checks it every 200 ms and turns all LEDs off if the reading is 2500 or higher.</p>
+      <label for="sensor-value">Value to send (0–4095)</label>
+      <input id="sensor-value" type="number" min="0" max="4095" step="1" value="1000" inputmode="numeric">
+      <button data-command="SET_SENSOR" disabled>Set sensor value</button>
+      <div class="row safety-controls"><button data-command="SET_SENSOR 1000" disabled>Set safe · 1000</button><button data-command="SET_SENSOR 3000" disabled>Set high · 3000</button></div>
+      <p class="hint">For the demo, set 1000, press START, then set 3000 while the LEDs are on. The sensor command only updates the input; the board performs the cutoff automatically. Set a value below 2500 before starting again. Values are simulated units, not temperature.</p>
     </section>
     <section class="panel console-panel" aria-labelledby="log-title">
       <div class="section-head"><h2 id="log-title">Board log</h2><button id="clear" class="text-button">Clear log</button></div>
