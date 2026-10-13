@@ -29,9 +29,6 @@
     <section class="panel" aria-labelledby="safety-title">
       <div class="section-head"><h2 id="safety-title">Safety demonstration</h2><span class="muted">Checked every 200 ms</span></div>
       <p class="hint">Set a simulated sensor reading manually. The ESP32 checks it every 200 ms and turns all LEDs off if the reading is 2500 or higher.</p>
-      <label for="sensor-value">Value to send (0–4095)</label>
-      <input id="sensor-value" type="number" min="0" max="4095" step="1" value="1000" inputmode="numeric">
-      <button data-command="SET_SENSOR" disabled>Set sensor value</button>
       <div class="row safety-controls"><button data-command="SET_SENSOR 1000" disabled>Set safe · 1000</button><button data-command="SET_SENSOR 3000" disabled>Set high · 3000</button></div>
       <p class="hint">For the demo, set 1000, press START, then set 3000 while the LEDs are on. The sensor command only updates the input; the board performs the cutoff automatically. Set a value below 2500 before starting again. Values are simulated units, not temperature.</p>
     </section>

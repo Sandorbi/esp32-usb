@@ -73,17 +73,8 @@ for (const button of buttons) button.addEventListener('click', async () => {
   if (!connection || sending || busy) return;
   const active = connection;
   const before = received;
-  let command = button.dataset.command === 'START_SEQUENCE'
+  const command = button.dataset.command === 'START_SEQUENCE'
     ? `START_SEQUENCE ${$('intensity').value}` : button.dataset.command;
-  if (command === 'SET_SENSOR') {
-    const input = $('sensor-value');
-    if (!/^\d{1,4}$/.test(input.value) || Number(input.value) > 4095) {
-      notice('Enter a whole sensor value from 0 to 4095.', true);
-      input.focus();
-      return;
-    }
-    command = `SET_SENSOR ${Number(input.value)}`;
-  }
   sending = true; render(); clearTimeout(replyTimer);
   try {
     await active.write(new TextEncoder().encode(command + '\n'));

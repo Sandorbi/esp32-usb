@@ -26,16 +26,17 @@ Firmware must be uploaded to the ESP32. Pushing to GitHub only updates repositor
 
 ## Protocol
 
-115200 baud, 8 data bits, no parity, 1 stop bit. ASCII commands terminated by LF or CRLF. Lowercase commands are accepted. Maximum line length: 47 characters. Malformed/overlong lines are discarded in full.
+115200 baud, 8 data bits, no parity, 1 stop bit. ASCII commands terminated by LF or CRLF. Lowercase commands are accepted. Maximum line length: 31 characters. Malformed/overlong lines are discarded in full.
 
 | Command | Result |
 |---|---|
 | `START_SEQUENCE` | Start once, default intensity 5 |
 | `START_SEQUENCE 1` … `START_SEQUENCE 5` | Start at 20%, 40%, 60%, 80%, or 100% PWM duty |
 | `STOP` | Immediately switch all three outputs off; safe to repeat |
-| `SET_SENSOR 0` … `SET_SENSOR 4095` | Set the simulated input; the periodic check handles the cutoff |
+| `SET_SENSOR 1000` | Set a safe simulated input |
+| `SET_SENSOR 3000` | Set an unsafe simulated input; the periodic check handles the cutoff |
 
-New starts while running are rejected, so commands cannot extend the sequence indefinitely. STOP does not clear an unsafe reading. SET_SENSOR is accepted while idle or running; it changes only the stored input, without stopping the sequence or resetting the sampling timer. Values must contain one to four decimal digits and be between 0 and 4095. Invalid input leaves the previous value unchanged.
+New starts while running are rejected, so commands cannot extend the sequence indefinitely. STOP does not clear an unsafe reading. The two SET_SENSOR commands are accepted while idle or running; they change only the stored input, without stopping the sequence or resetting the sampling timer. Other sensor values, invalid intensity parameters, and trailing junk are rejected without changing the state.
 
 Responses include `OK:`, `ERR:`, and `SAFETY CUTOFF:`. Short messages print directly on commands and state changes; there is no logging queue or continuous sensor logging. Outputs are changed before STOP/cutoff responses are printed. Serial printing can briefly wait for transmit-buffer space; the firmware returns to timing and safety checks after each command. Browser log arrival times include USB buffering and are not precise output-timing measurements.
 
@@ -43,7 +44,7 @@ The project pins Espressif32 platform 6.12.0 and uses its Arduino-ESP32 2.x chan
 
 ## Safety demonstration — no sensor needed
 
-The firmware starts with a simulated reading of 1000, adjustable through the app or terminal. It samples every 200 ms, even while idle, plus a fresh sample before a start attempt when idle. The unsafe threshold is **value >= 2500** on a 0–4095 scale. These are test units, not temperature.
+The firmware starts with a simulated reading of 1000, selectable as 1000 or 3000 through the app or terminal. It checks the input every 200 ms, even while idle, and also checks the current value before starting. The unsafe threshold is **value >= 2500**. These are test units, not temperature. Lowering the input never restarts the LEDs automatically.
 
 1. Send `SET_SENSOR 1000`, then `START_SEQUENCE 5`. All LEDs switch off at 2 seconds.
 2. Start again. While the LEDs are on, send `SET_SENSOR 3000` (or tap **Set high · 3000**).
