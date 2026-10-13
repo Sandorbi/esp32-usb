@@ -37,7 +37,7 @@
       <pre id="log" role="log" aria-live="polite" aria-label="USB command and response log">Ready when you are.
 </pre>
     </section>
-    <details><summary>Connection and wiring</summary><ol><li>Upload the capability-test firmware with PlatformIO.</li><li>Wire LED A to GPIO16, B to GPIO17, and C to GPIO18. Each LED needs its own 330 Ω series resistor and a cathode connection to GND.</li><li>On your phone, open this page over HTTPS in Chrome. Connect the ESP32 with your data cable or OTG adapter.</li><li>Tap Connect board, select CP2102, and accept USB permission.</li><li>Tap STOP and check for “OK: STOP; all LEDs OFF” in the board log. Then try START.</li></ol><p>If no device appears, check the cable and phone USB/OTG settings. Close other serial apps. On a computer, select Web Serial and close the PlatformIO serial monitor.</p><p>Disconnect closes the connection; it does not send STOP. Use STOP for immediate shutdown. A running sequence still ends at 2 seconds, and the board continues checking its sensor independently.</p></details>
+    <p class="hint">Disconnect closes the connection; it does not send STOP. Use STOP for immediate shutdown. A running sequence still ends at 2 seconds, and the board continues checking its sensor independently.</p>
   </main>
   <script type="module" src="app.mjs"></script>
 </body>
