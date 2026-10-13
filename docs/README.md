@@ -16,10 +16,10 @@ Upload the new ESP32 firmware separately through PlatformIO. The webpage does no
 4. Select intensity 1–5, then START. This sends `START_SEQUENCE <intensity>`.
 5. A/B/C come on at 0/400/900 ms and all switch off at 2000 ms.
 6. Start again and press STOP before completion to show immediate interruption.
-7. Tap **Set safe · 1000**, then START. While the LEDs are on, tap **Set high · 3000**. The next 200 ms firmware check cuts off the outputs without a STOP command.
-8. Tap **Set safe · 1000** before another normal run. Only 1000 and 3000 are supported sensor values.
+7. Move the sensor slider below 2500 and release, then tap START. While the LEDs are on, move it to 2500 or higher and release. The next 200 ms firmware check cuts off the outputs without a STOP command.
+8. Move the slider below 2500 and release before another normal run. A new START command is required.
 
-The sensor buttons send `SET_SENSOR 1000` or `SET_SENSOR 3000`. Those commands only change the simulated input; the ESP32 independently checks it and performs the cutoff. The app log shows firmware acknowledgments/errors; a successful USB write alone is not proof that a command was accepted.
+The sensor slider sends `SET_SENSOR <value>` when released, accepting integers from 0 through 4095. These commands only change the simulated input; the ESP32 independently checks it and performs the cutoff. The app log shows firmware acknowledgments/errors; a successful USB write alone is not proof that a command was accepted.
 
 Disconnect does not send STOP. A running sequence still ends at 2 seconds and the firmware continues checking its sensor without the app.
 

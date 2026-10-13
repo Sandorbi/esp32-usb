@@ -19,6 +19,7 @@ function render() {
   $('disconnect').disabled = !connection || busy || sending;
   $('transport').disabled = !!connection || busy;
   buttons.forEach(button => { button.disabled = !connection || busy || sending; });
+  $('sensor').disabled = !connection || busy || sending;
   $('badge').textContent = connection ? 'Connected' : busy ? 'Connecting…' : 'Disconnected';
   $('badge').classList.toggle('connected', !!connection);
 }
@@ -69,12 +70,10 @@ $('connect').addEventListener('click', async () => {
   } finally { busy = false; render(); }
 });
 $('disconnect').addEventListener('click', () => void disconnect());
-for (const button of buttons) button.addEventListener('click', async () => {
+async function sendCommand(command) {
   if (!connection || sending || busy) return;
   const active = connection;
   const before = received;
-  const command = button.dataset.command === 'START_SEQUENCE'
-    ? `START_SEQUENCE ${$('intensity').value}` : button.dataset.command;
   sending = true; render(); clearTimeout(replyTimer);
   try {
     await active.write(new TextEncoder().encode(command + '\n'));
@@ -87,7 +86,14 @@ for (const button of buttons) button.addEventListener('click', async () => {
   } catch (error) {
     if (connection === active) await disconnect(`Send failed: ${error.message}`);
   } finally { sending = false; render(); }
+}
+for (const button of buttons) button.addEventListener('click', () => {
+  const command = button.dataset.command === 'START_SEQUENCE'
+    ? `START_SEQUENCE ${$('intensity').value}` : button.dataset.command;
+  void sendCommand(command);
 });
+$('sensor').addEventListener('input', () => { $('sensor-value').value = $('sensor').value; });
+$('sensor').addEventListener('change', () => void sendCommand(`SET_SENSOR ${$('sensor').value}`));
 $('clear').addEventListener('click', () => { $('log').textContent = ''; });
 $('transport').addEventListener('change', checkSupport);
 navigator.usb?.addEventListener('disconnect', event => {

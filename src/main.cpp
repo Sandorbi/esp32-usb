@@ -79,12 +79,26 @@ void handleCommand(const char* text) {
                && text[15] >= '1' && text[15] <= '5') {
         // Exact length rejects extra digits, spaces, or trailing junk.
         startSequence(text[15] - '0');
-    } else if (strcmp(text, "SET_SENSOR 1000") == 0) {
-        sensorValue = 1000;
-        Serial.println("OK: sensor input=1000");
-    } else if (strcmp(text, "SET_SENSOR 3000") == 0) {
-        sensorValue = 3000;
-        Serial.println("OK: sensor input=3000");
+    } else if (strncmp(text, "SET_SENSOR ", 11) == 0) {
+        const char* number = text + 11;
+        if (strlen(number) == 0 || strlen(number) > 4) {
+            Serial.println("ERR: sensor must be 0-4095");
+            return;
+        }
+        uint16_t value = 0;
+        for (uint8_t i = 0; number[i] != '\0'; ++i) {
+            if (number[i] < '0' || number[i] > '9') {
+                Serial.println("ERR: sensor must be 0-4095");
+                return;
+            }
+            value = value * 10 + (number[i] - '0');
+        }
+        if (value > 4095) {
+            Serial.println("ERR: sensor must be 0-4095");
+            return;
+        }
+        sensorValue = value;
+        Serial.printf("OK: sensor input=%u\n", sensorValue);
     } else {
         Serial.println("ERR: invalid command or parameter");
     }
