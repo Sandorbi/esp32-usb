@@ -24,9 +24,9 @@ export class CP2102 {
           const baud = new Uint8Array(4);
           new DataView(baud.buffer).setUint32(0, 115200, true);
           await this.control(0x1e, 0, baud);
-          await this.control(0x03, 0x0800); // 8 data bits, no parity, 1 stop bit.
-          await this.control(0x13, 0, new Uint8Array(16)); // No flow control; DTR/RTS inactive.
-          await this.control(0x07, 0x0300); // Keep ESP32 reset/boot control lines deasserted.
+          await this.control(0x03, 0x0800); // 8 data bits, no parity, one stop bit.
+          await this.control(0x13, 0, new Uint8Array(16)); // Disable flow control.
+          await this.control(0x07, 0x0300); // Deassert DTR/RTS to avoid holding reset or boot.
           return;
         }
       }
@@ -43,7 +43,7 @@ export class CP2102 {
     if (result.status !== 'ok' || result.bytesWritten !== bytes.byteLength) throw new Error('USB command was not fully sent. Reconnect the board.');
   }
   async close() {
-    // Closing aborts an outstanding transferIn, so an idle board cannot block disconnect.
+    // Closing aborts a pending USB read, including when the board is idle.
     if (this.device.opened) await this.device.close();
   }
 }
@@ -68,6 +68,7 @@ export class SerialConnection {
 }
 
 export function lineDecoder(onLine) {
+  // USB packets may split a character or a line; retain incomplete input.
   const decoder = new TextDecoder();
   let pending = '';
   return bytes => {

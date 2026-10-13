@@ -28,7 +28,7 @@ function checkSupport() {
   else notice('Connect the board using a USB data cable, then tap Connect board.');
   render();
 }
-async function disconnect(message = 'Disconnected. The board’s 5-second inactivity timeout still applies.') {
+async function disconnect(message = 'Disconnected. The board still ends each sequence at 2 seconds and checks its safety input.') {
   const old = connection;
   connection = null; busy = true;
   clearTimeout(replyTimer); render();
@@ -53,13 +53,13 @@ $('connect').addEventListener('click', async () => {
   busy = true; render();
   let candidate;
   try {
-    // Keep the device chooser in the user-click handler for browser permission rules.
+    // Browser device selection must originate from a user gesture.
     candidate = $('transport').value === 'usb'
       ? new CP2102(await navigator.usb.requestDevice({ filters: [USB_FILTER] }))
       : new SerialConnection(await navigator.serial.requestPort({ filters: [{ usbVendorId: USB_FILTER.vendorId, usbProductId: USB_FILTER.productId }] }));
     await candidate.open();
     connection = candidate;
-    notice('Connected at 115200 baud. Tap STATUS to check the firmware response.');
+    notice('Connected at 115200 baud. Tap STOP to check the firmware response.');
     log('•', 'Connected. No command sent yet.');
     void receive(candidate);
   } catch (error) {
@@ -73,7 +73,8 @@ for (const button of buttons) button.addEventListener('click', async () => {
   if (!connection || sending || busy) return;
   const active = connection;
   const before = received;
-  const command = button.dataset.command;
+  const command = button.dataset.command === 'START_SEQUENCE'
+    ? `START_SEQUENCE ${$('intensity').value}` : button.dataset.command;
   sending = true; render(); clearTimeout(replyTimer);
   try {
     await active.write(new TextEncoder().encode(command + '\n'));
@@ -81,7 +82,7 @@ for (const button of buttons) button.addEventListener('click', async () => {
     log('TX', command);
     notice(`${command} sent. Check the board log for its response.`);
     if (received === before) replyTimer = setTimeout(() => {
-      if (connection === active) notice('No complete response received. Verify the firmware is uploaded and press STATUS again. If needed, press the board’s EN/reset button.', true);
+      if (connection === active) notice('No complete response received. Verify the firmware is uploaded and press STOP again. If needed, press the board’s EN/reset button.', true);
     }, 2500);
   } catch (error) {
     if (connection === active) await disconnect(`Send failed: ${error.message}`);

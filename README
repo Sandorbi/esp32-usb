@@ -1,103 +1,71 @@
-# ESP32 Hot Flash Simulation
+# ESP32 Developer Capability Test
 
-## Project Description
+Implements section 4 of the assessment: three timed LED outputs controlled over USB serial, immediate STOP, and an independently scheduled safety check. This is an LED demonstration, not the full heating/vibration wearable.
 
-This project uses an ESP32 to simulate the buildup and cooldown of a hot flash using **9 red LEDs and 1 green safety LED**.
+## Pin configuration
 
-The ESP32 communicates with a laptop through **USB serial communication**. Commands sent through the serial monitor control the animation and safety system.
+| Output | GPIO | On after START_SEQUENCE | Off |
+|---|---:|---:|---:|
+| LED A | 16 | Immediately | At 2000 ms |
+| LED B | 17 | At 400 ms | At 2000 ms |
+| LED C | 18 | At 900 ms | At 2000 ms |
 
-## Hardware Used
+Each LED: GPIO → individual 330 Ω resistor → anode (+); cathode (−) → GND. Use the board's GPIO labels, not connector pin positions. Only three external LEDs are used.
 
-- ESP32 development board
-- 9 red LEDs
-- 1 green LED (safety channel)
-- 10 current-limiting, 330 ohm resistors
-- Breadboard and jumper wires
-- USB-C data cable
+The selected output pins are for the NodeMCU ESP-32S. Check pin availability before changing to a different ESP32 module, especially one with PSRAM.
 
-### GPIO Configuration
+## Build and upload
 
-| LEDs | GPIO Pins |
+1. Open this project in VS Code with PlatformIO.
+2. Connect the ESP32 to the computer and close any browser/serial monitor connection to it.
+3. Select the `esp32dev` environment and use PlatformIO **Upload** (or `pio run -e esp32dev -t upload`).
+4. Open the serial monitor at 115200 baud, newline endings, or use the phone web app.
+5. Send `STOP` and check for `OK: STOP; all LEDs OFF` to verify communication.
+
+Firmware must be uploaded to the ESP32. Pushing to GitHub only updates repository files and the hosted webpage; it does not flash the board.
+
+## Protocol
+
+115200 baud, 8 data bits, no parity, 1 stop bit. ASCII commands terminated by LF or CRLF. Lowercase commands are accepted. Maximum line length: 47 characters. Malformed/overlong lines are discarded in full.
+
+| Command | Result |
 |---|---|
-| 9 Red LEDs | 16, 17, 18, 19, 21, 23, 25, 26, 27 |
-| Green Safety LED | 22 |
+| `START_SEQUENCE` | Start once, default intensity 5 |
+| `START_SEQUENCE 1` … `START_SEQUENCE 5` | Start at 20%, 40%, 60%, 80%, or 100% PWM duty |
+| `STOP` | Immediately switch all three outputs off; safe to repeat |
+| `SAFETY_TEST ON` | Arm the automatic simulated sensor rise for subsequent sequences |
+| `SAFETY_TEST OFF` | Disarm and reset the simulated sensor to 1000 |
 
-### Circuit Configuration
-GPIO16 ── 330Ω ──>|── GND   (Red LED 1)
-GPIO17 ── 330Ω ──>|── GND   (Red LED 2)
-GPIO18 ── 330Ω ──>|── GND   (Red LED 3)
-GPIO19 ── 330Ω ──>|── GND   (Red LED 4)
-GPIO21 ── 330Ω ──>|── GND   (Red LED 5)
-GPIO23 ── 330Ω ──>|── GND   (Red LED 6)
-GPIO25 ── 330Ω ──>|── GND   (Red LED 7)
-GPIO26 ── 330Ω ──>|── GND   (Red LED 8)
-GPIO27 ── 330Ω ──>|── GND   (Red LED 9)
-GPIO22 ── 330Ω ──>|── GND   (Green Safety LED)
+New starts while running are rejected, so commands cannot extend the sequence indefinitely. STOP does not clear an unsafe reading. Changing the safety test while running is rejected; STOP first.
 
-## Technologies and Concepts
+Responses include `OK:`, `ERR:`, and `SAFETY CUTOFF:`. Messages enter a bounded queue after output changes. Each loop sends only as many bytes as the serial buffer has room for, so logging does not wait for buffer space. If the 12-message queue fills, new messages are dropped while output control continues. Browser log arrival times include USB buffering and are not precise output-timing measurements.
 
-**PlatformIO + Arduino Framework**
+The project pins Espressif32 platform 6.12.0 and uses its Arduino-ESP32 2.x channel-based PWM API.
 
-Used to develop, compile, and upload the firmware to the ESP32.
+## Safety demonstration — no sensor needed
 
-**PWM (Pulse Width Modulation)**
+Default firmware uses fixed simulated readings, allowed by the capability brief. It samples every 200 ms, even while idle, plus a fresh sample before an accepted start. The unsafe threshold is **value >= 2500** on a 0–4095 scale. These are test units, not temperature.
 
-The ESP32's LEDC peripheral controls the brightness of all 9 red LEDs independently, creating smooth fading effects instead of simple ON/OFF transitions.
+1. Run a normal sequence with `START_SEQUENCE 5`. All LEDs switch off at 2 seconds.
+2. Send `SAFETY_TEST ON`, then `START_SEQUENCE 5`.
+3. Send nothing else. At 1200 ms into the sequence the simulated input becomes 3000. The next 200 ms safety check switches all outputs off and reports `SAFETY CUTOFF`.
+4. A further START is rejected while the input remains high.
+5. Send `SAFETY_TEST OFF` to return the input to 1000. Restart explicitly when ready.
 
-**Non-blocking Timing (`millis()`)**
+The phone only arms the test. The sensor rise and cutoff happen on the ESP32 without a timed phone message. Under normal operation the demo trips around 1200 ms, with up to one 200 ms sampling period of latency. Reset/disarm before recording a normal sequence again.
 
-The animation uses `millis()` instead of `delay()`. This allows the ESP32 to continue processing serial commands while the LED sequence is running, keeping the STOP command responsive.
+## Phone app
 
-**USB Serial Communication**
+`docs/` contains the static app with CP2102 WebUSB and desktop Web Serial support. See [webpage setup](docs/README.md).
 
-The ESP32 receives text commands from a laptop through the USB serial connection at 115200 baud.
+## Verification
 
-**Automatic Safety Timeout**
+- Build: `pio run -e esp32dev`.
+- Verify physical timing within ±50 ms, STOP, and the simulated cutoff on the board.
 
-A watchdog-style software timer automatically disables the outputs if no valid command refreshes the safety timer for 5 seconds.
+The full product's heater controls, physical emergency-stop circuit, calibrated thermal sensing, app modes, and multi-unit flashing tool are outside this capability test.
 
-## Available Commands
+## References
 
-| Command | Description |
-|---|---|
-| `START` | Starts/restarts the hot-flash LED animation and activates the green safety LED |
-| `STOP` | Interrupts the animation and switches off all LEDs |
-| `PING` | Resets the 5-second safety timer |
-| `STATUS` | Displays the current animation and safety states |
-| `HELP` | Lists available commands |
-
-While the safety channel is active, `START`, `PING`, `STATUS`, and `HELP` refresh the timeout. Invalid commands do not.
-
-## Hot Flash Animation
-
-The animation consists of three stages:
-
-1. **Build-up:** The red LEDs gradually illuminate one after another.
-2. **Peak:** All 9 LEDs reach maximum brightness.
-3. **Cooldown:** The LEDs gradually fade out in reverse order.
-
-The complete animation takes approximately **4.38 seconds**.
-
-The green LED represents a separate safety-controlled channel. It remains active until a STOP command or the 5-second inactivity timeout.
-
-## Challenges and Implementation Notes
-
-- Hardware part was pretty straightforward so main part of the task was the software part.
-- **Responsive command handling:** The main design challenge was ensuring the animation would not block incoming STOP commands. Using `millis()` and non-blocking PWM updates allows animation and serial communication to operate together.
-- **Safety behavior:** The safety timer is managed independently of the animation, allowing the green LED to remain active after the animation finishes and switch off automatically when communication stops.
-
-## Building and Running
-
-### Phone USB test page
-
-The `docs/` folder contains a phone-friendly USB test page with Connect, START, STOP, STATUS, and a board response log. See [setup and testing instructions](docs/README.md). To preview on this computer, run `node tools/serve-web.mjs` and open `http://localhost:8080`. Phone access requires HTTPS hosting.
-
-### Firmware
-
-1. Open the project in VS Code with PlatformIO.
-2. Select `Espressif ESP32 Dev Module` (`esp32dev`) and the Arduino framework.
-3. Connect the ESP32 using a USB data cable.
-4. Build and upload the firmware.
-5. Open the serial monitor at **115200 baud**.
-6. Send `START`, `STOP`, or other supported commands.
-
+- [Espressif LED PWM API](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/ledc.html)
+- [ESP32-WROOM-32 pin documentation](https://documentation.espressif.com/esp32-wroom-32_datasheet_en.html)

@@ -1,359 +1,138 @@
-
 #include <Arduino.h>
-#include <esp_arduino_version.h>
-#include <string.h>
-#include <ctype.h>
+#include <stdarg.h>
+#include "sequence_controller.h"
 
-// =====================================
-// 1. PIN CONFIGURATION
-// =====================================
-
-const uint8_t RED_PINS[] = {
-    16, 17, 18, 19, 21, 23, 25, 26, 27
-};
-
-const uint8_t RED_COUNT =
-    sizeof(RED_PINS) / sizeof(RED_PINS[0]);
-
-const uint8_t GREEN_PIN = 22;
-
-// =====================================
-// 2. PWM CONFIGURATION
-// =====================================
-
+const uint8_t LED_PINS[] = {16, 17, 18}; // A, B, C; active-high outputs.
 const uint32_t PWM_FREQUENCY = 5000;
-const uint8_t PWM_RESOLUTION = 8;
-const uint16_t MAX_BRIGHTNESS = 255;
+SequenceController sequence;
+SimulatedSensor simulatedSensor;
+CommandBuffer commandBuffer;
+uint8_t previousDuty[3] = {};
+bool pwmReady = true;
 
-// =====================================
-// 3. TIMING CONFIGURATION
-// =====================================
+// Queue messages so serial output cannot hold up timing or safety checks.
+const uint8_t LOG_CAPACITY = 12;
+char logLines[LOG_CAPACITY][128];
+uint8_t logHead = 0, logCount = 0;
+size_t logOffset = 0;
 
-// Time between successive LEDs
-const unsigned long STAGGER_MS = 180;
+void report(const char* format, ...) {
+    // Drop new messages if full rather than waiting for the host.
+    if (logCount == LOG_CAPACITY) return;
+    char* message = logLines[(logHead + logCount) % LOG_CAPACITY];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(logLines[0]) - 1, format, args);
+    va_end(args);
+    strcat(message, "\n");
+    ++logCount;
+}
+void flushLog() {
+    if (!logCount) return;
+    const int available = Serial.availableForWrite();
+    if (available <= 0) return;
 
-// Time for each LED to fade in/out
-const unsigned long FADE_MS = 500;
-
-// Hold all LEDs at peak brightness
-const unsigned long PEAK_HOLD_MS = 500;
-
-// Time between PWM updates
-const unsigned long FRAME_MS = 15;
-
-// Safety timeout: 5 seconds
-const unsigned long SAFETY_TIMEOUT = 5000;
-
-// Calculated sequence timing
-const unsigned long FADE_OUT_START =
-    (RED_COUNT - 1) * STAGGER_MS +
-    FADE_MS + PEAK_HOLD_MS;
-
-const unsigned long SEQUENCE_END =
-    FADE_OUT_START +
-    (RED_COUNT - 1) * STAGGER_MS +
-    FADE_MS;
-
-// =====================================
-// 4. SYSTEM STATE
-// =====================================
-
-bool sequenceRunning = false;
-bool safetyActive = false;
-
-unsigned long sequenceStart = 0;
-unsigned long lastCommandTime = 0;
-unsigned long lastFrameTime = 0;
-
-char commandBuffer[32];
-uint8_t commandLength = 0;
-
-// =====================================
-// 5. PWM COMPATIBILITY
-// =====================================
-
-void setupPWM() {
-    for (uint8_t i = 0; i < RED_COUNT; i++) {
-
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcAttach(
-            RED_PINS[i],
-            PWM_FREQUENCY,
-            PWM_RESOLUTION
-        );
-#else
-        ledcSetup(
-            i,
-            PWM_FREQUENCY,
-            PWM_RESOLUTION
-        );
-        ledcAttachPin(RED_PINS[i], i);
-#endif
+    // Send only what fits; resume a partial line on the next loop.
+    const char* message = logLines[logHead];
+    const size_t length = strlen(message);
+    const size_t remaining = length - logOffset;
+    const size_t amount = remaining < size_t(available) ? remaining : size_t(available);
+    logOffset += Serial.write(reinterpret_cast<const uint8_t*>(message + logOffset), amount);
+    if (logOffset == length) {
+        logOffset = 0;
+        logHead = (logHead + 1) % LOG_CAPACITY;
+        --logCount;
     }
 }
-
-void writeRed(uint8_t index, uint8_t duty) {
-
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(RED_PINS[index], duty);
-#else
-    ledcWrite(index, duty);
-#endif
-}
-
-// =====================================
-// 6. OUTPUT CONTROL
-// =====================================
-
-void redOff() {
-    for (uint8_t i = 0; i < RED_COUNT; i++) {
-        writeRed(i, 0);
+void applyOutputs(uint32_t now) {
+    for (uint8_t i = 0; i < 3; ++i) {
+        const uint8_t duty = pwmReady ? sequence.duty(i, now) : 0;
+        if (duty == previousDuty[i]) continue;
+        ledcWrite(i, duty);
+        previousDuty[i] = duty;
     }
 }
-
-void stopAll() {
-    sequenceRunning = false;
-    safetyActive = false;
-
-    redOff();
-    digitalWrite(GREEN_PIN, LOW);
+void sampleSafety(uint32_t now) {
+    const bool wasUnsafe = sequence.unsafe;
+    const bool tripped = sequence.sample(now, simulatedSensor.read(sequence, now));
+    // Apply the cutoff before reporting it to the host.
+    applyOutputs(now);
+    if (tripped) report("SAFETY CUTOFF: sensor=%u threshold=%u; all LEDs OFF", sequence.sensorValue, SequenceController::SAFETY_THRESHOLD);
+    else if (wasUnsafe && !sequence.unsafe) report("SAFETY: input safe; send START_SEQUENCE to start again");
 }
-
-// =====================================
-// 7. BRIGHTNESS CALCULATION
-// =====================================
-
-uint8_t getBrightness(
-    unsigned long elapsed,
-    uint8_t index
-) {
-    // LEDs turn on from first to last
-    unsigned long fadeInStart =
-        index * STAGGER_MS;
-
-    // LEDs turn off in reverse order
-    unsigned long fadeOutStart =
-        FADE_OUT_START +
-        (RED_COUNT - 1 - index) * STAGGER_MS;
-
-    // Not started yet
-    if (elapsed < fadeInStart) {
-        return 0;
-    }
-
-    // Gradually brighten
-    if (elapsed < fadeInStart + FADE_MS) {
-        return (elapsed - fadeInStart) *
-               MAX_BRIGHTNESS / FADE_MS;
-    }
-
-    // Stay at maximum brightness
-    if (elapsed < fadeOutStart) {
-        return MAX_BRIGHTNESS;
-    }
-
-    // Gradually fade out
-    if (elapsed < fadeOutStart + FADE_MS) {
-        return MAX_BRIGHTNESS -
-               (elapsed - fadeOutStart) *
-               MAX_BRIGHTNESS / FADE_MS;
-    }
-
-    return 0;
-}
-
-// =====================================
-// 8. NON-BLOCKING LED ANIMATION
-// =====================================
-
-void updateSequence() {
-    if (!sequenceRunning) return;
-
-    unsigned long now = millis();
-
-    if (now - lastFrameTime < FRAME_MS) {
-        return;
-    }
-
-    lastFrameTime = now;
-
-    unsigned long elapsed =
-        now - sequenceStart;
-
-    // Animation completed
-    if (elapsed >= SEQUENCE_END) {
-        redOff();
-        sequenceRunning = false;
-        Serial.println("OK: Sequence complete");
-        return;
-    }
-
-    // Update brightness of every red LED
-    for (uint8_t i = 0; i < RED_COUNT; i++) {
-        uint8_t brightness =
-            getBrightness(elapsed, i);
-
-        writeRed(i, brightness);
-    }
-}
-
-// =====================================
-// 9. SERIAL COMMAND HANDLER
-// =====================================
-
-void handleCommand(const char* cmd) {
-
-    if (strcmp(cmd, "START") == 0) {
-
-        stopAll();
-
-        unsigned long now = millis();
-
-        sequenceRunning = true;
-        safetyActive = true;
-
-        sequenceStart = now;
-        lastCommandTime = now;
-        lastFrameTime = now - FRAME_MS;
-
-        digitalWrite(GREEN_PIN, HIGH);
-
-        Serial.println("OK: Hot flash started");
-    }
-
-    else if (strcmp(cmd, "STOP") == 0) {
-
-        stopAll();
-
-        Serial.println("OK: All LEDs OFF");
-    }
-
-    else if (strcmp(cmd, "PING") == 0) {
-
-        if (safetyActive) {
-            lastCommandTime = millis();
-            Serial.println("OK: Safety timer reset");
+void handleCommand(const char* text) {
+    const Command command = parseCommand(text);
+    const uint32_t now = millis();
+    switch (command.kind) {
+    case Commands::Stop:
+        sequence.stop(); applyOutputs(now);
+        report("OK: STOP; all LEDs OFF");
+        break;
+    case Commands::Start:
+        if (sequence.running) { report("ERR: sequence already running; use STOP first"); break; }
+        // Never start using a stale safety reading.
+        sampleSafety(now);
+        if (!pwmReady) report("ERR: PWM setup failed; restart the board");
+        else if (sequence.unsafe) report("ERR: unsafe input; reset safety test before starting");
+        else if (!sequence.start(now, command.intensity)) report("ERR: sequence already running; use STOP first");
+        else {
+            applyOutputs(now);
+            report("OK: START_SEQUENCE intensity=%u; A=0 B=400 C=900 OFF=2000 ms", command.intensity);
+        }
+        break;
+    case Commands::ArmSafety:
+    case Commands::ResetSafety:
+        if (sequence.running) { report("ERR: use STOP before changing the safety test"); break; }
+        if (command.kind == Commands::ArmSafety) {
+            if (simulatedSensor.high) { report("ERR: reset the safety test first"); break; }
+            simulatedSensor.armed = true;
+            report("OK: safety test ARMED; input rises 1200 ms into the next sequence");
         } else {
-            Serial.println("ERR: Safety inactive");
+            simulatedSensor.reset(); sampleSafety(now);
+            report("OK: safety test OFF; simulated input=1000");
         }
-    }
-
-    else if (strcmp(cmd, "STATUS") == 0) {
-
-        if (safetyActive) {
-            lastCommandTime = millis();
-        }
-
-        Serial.print("Sequence: ");
-        Serial.println(
-            sequenceRunning ? "RUNNING" : "IDLE"
-        );
-
-        Serial.print("Safety: ");
-        Serial.println(
-            safetyActive ? "ACTIVE" : "OFF"
-        );
-    }
-
-    else if (strcmp(cmd, "HELP") == 0) {
-
-        if (safetyActive) {
-            lastCommandTime = millis();
-        }
-
-        Serial.println(
-            "Commands: START, STOP, PING, STATUS, HELP"
-        );
-    }
-
-    else {
-        Serial.println("ERR: Unknown command");
+        break;
+    default:
+        report("ERR: invalid command or parameter");
     }
 }
-
-// =====================================
-// 10. USB SERIAL INPUT
-// =====================================
-
-void readSerial() {
-
-    while (Serial.available() > 0) {
-
-        char c = Serial.read();
-
-        // Command completed by Enter
-        if (c == '\n' || c == '\r') {
-
-            if (commandLength > 0) {
-
-                commandBuffer[commandLength] = '\0';
-
-                handleCommand(commandBuffer);
-
-                commandLength = 0;
-            }
+void readCommands() {
+    // Process at most one command or 64 bytes before checking timing and safety again.
+    for (uint8_t i = 0; i < 64 && Serial.available(); ++i) {
+        const auto result = commandBuffer.feed(char(Serial.read()));
+        if (result == CommandBuffer::Result::Ready) {
+            handleCommand(commandBuffer.text);
+            return;
         }
-
-        // Add valid characters to buffer
-        else if (c >= 32 && c <= 126) {
-
-            if (commandLength <
-                sizeof(commandBuffer) - 1) {
-
-                commandBuffer[commandLength++] =
-                    toupper((unsigned char)c);
-
-            } else {
-                commandLength = 0;
-                Serial.println("ERR: Command too long");
-            }
+        if (result == CommandBuffer::Result::Invalid) {
+            report("ERR: malformed/overlong command discarded");
+            return;
         }
     }
 }
-
-// =====================================
-// 11. SETUP
-// =====================================
-
 void setup() {
-
     Serial.begin(115200);
-
-    pinMode(GREEN_PIN, OUTPUT);
-
-    setupPWM();
-    stopAll();
-
-    Serial.println();
-    Serial.println("======================");
-    Serial.println("ESP32 HOT FLASH SYSTEM");
-    Serial.println("======================");
-    Serial.println("9 Red PWM LEDs");
-    Serial.println("1 Green Safety LED");
-    Serial.println("Commands: START, STOP, PING, STATUS, HELP");
-    Serial.println("System ready!");
-}
-
-// =====================================
-// 12. MAIN LOOP
-// =====================================
-
-void loop() {
-
-    // First priority: read commands
-    readSerial();
-
-    // Automatically shut down if communication stops
-    if (safetyActive &&
-        millis() - lastCommandTime >= SAFETY_TIMEOUT) {
-
-        stopAll();
-
-        Serial.println(
-            "SAFETY TIMEOUT: All outputs OFF"
-        );
+    for (uint8_t i = 0; i < 3; ++i) {
+        pinMode(LED_PINS[i], OUTPUT); digitalWrite(LED_PINS[i], LOW);
+        if (ledcSetup(i, PWM_FREQUENCY, 8) == 0) pwmReady = false;
+        ledcAttachPin(LED_PINS[i], i);
+        ledcWrite(i, 0);
     }
-
-    // Keep animation running without blocking
-    updateSequence();
+    sampleSafety(millis());
+    report("ESP32 CAPABILITY TEST | A=GPIO16 B=GPIO17 C=GPIO18 | 115200 8N1");
+    report("Safety mode: SIMULATED | threshold >=2500 | interval 200 ms");
+    report(pwmReady ? "Ready. Send START_SEQUENCE [1-5] or STOP." : "ERR: PWM setup failed; START disabled");
+}
+void updateController() {
+    const uint32_t now = millis();
+    if (sequence.safetyDue(now)) sampleSafety(now);
+    if (sequence.update(now)) { applyOutputs(now); report("OK: sequence complete; all LEDs OFF at 2000 ms"); }
+    applyOutputs(now);
+}
+void loop() {
+    // Recheck deadlines after processing commands; no blocking sequence delays.
+    updateController();
+    readCommands();
+    updateController();
+    flushLog();
 }

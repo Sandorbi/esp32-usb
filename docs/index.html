@@ -10,7 +10,7 @@
 <body>
   <main>
     <h1>Hot Flash Simulation</h1>
-    <p class="intro">Connect your ESP32 to control the LED sequence.</p>
+    <p class="intro">Three timed outputs, cable control, and an automatic safety cutoff.</p>
     <section class="panel" aria-labelledby="connection-title">
       <div class="section-head"><h2 id="connection-title">Connection</h2><span id="badge" class="badge">Disconnected</span></div>
       <p>NodeMCU ESP-32S <span class="muted">/ CP2102 / 115200 baud</span></p>
@@ -21,15 +21,23 @@
     </section>
     <section class="panel" aria-labelledby="commands-title">
       <div class="section-head"><h2 id="commands-title">Commands</h2><span class="muted">115200 · 8N1</span></div>
-      <div class="commands"><button data-command="START" class="primary" disabled>START<small>Run LED sequence</small></button><button data-command="STOP" class="stop" disabled>STOP<small>All LEDs off</small></button><button data-command="STATUS" disabled>STATUS<small>Read board state</small></button></div>
-      <p class="hint">The sequence lasts about 4.38 seconds. Outputs turn off after 5 seconds without a command. STATUS resets that timer; this page never polls automatically.</p>
+      <label for="intensity">LED intensity</label>
+      <select id="intensity"><option value="1">1 · 20%</option><option value="2">2 · 40%</option><option value="3">3 · 60%</option><option value="4">4 · 80%</option><option value="5" selected>5 · 100%</option></select>
+      <div class="commands"><button data-command="START_SEQUENCE" class="primary" disabled>START<small>Run 2-second sequence</small></button><button data-command="STOP" class="stop" disabled>STOP<small>All LEDs off now</small></button></div>
+      <p class="hint">A turns on immediately, B at 400 ms, C at 900 ms. All three turn off at 2 seconds. START sends START_SEQUENCE with the selected intensity.</p>
+    </section>
+    <section class="panel" aria-labelledby="safety-title">
+      <div class="section-head"><h2 id="safety-title">Safety demonstration</h2><span class="muted">Checked every 200 ms</span></div>
+      <p class="hint">Tap Arm safety test, then START. The board raises its simulated sensor value from 1000 to 3000 at 1.2 seconds and cuts off the LEDs at the next safety check. No further phone command is needed.</p>
+      <div class="row safety-controls"><button data-command="SAFETY_TEST ON" disabled>Arm safety test</button><button data-command="SAFETY_TEST OFF" disabled>Reset safety test</button></div>
+      <p class="hint">Cutoff threshold: 2500 (simulated units, not temperature). After a cutoff, reset the test before starting again.</p>
     </section>
     <section class="panel console-panel" aria-labelledby="log-title">
       <div class="section-head"><h2 id="log-title">Board log</h2><button id="clear" class="text-button">Clear log</button></div>
       <pre id="log" role="log" aria-live="polite" aria-label="USB command and response log">Ready when you are.
 </pre>
     </section>
-    <details><summary>First connection? Start here.</summary><ol><li>Upload the existing PlatformIO firmware to the board.</li><li>On your phone, open this page over HTTPS in Chrome. Connect the ESP32 with your data cable or OTG adapter.</li><li>Tap Connect board, select CP2102, and accept the USB permission prompt.</li><li>Tap STATUS. Look for “Sequence: IDLE” and “Safety: OFF”. Then try START and STOP.</li></ol><p>If no device appears, check the data cable and phone USB/OTG settings. Close other serial apps. On a computer, select Web Serial and close the PlatformIO serial monitor.</p><p>Disconnect closes the connection; it does not send STOP. Use STOP first to switch the LEDs off immediately. Otherwise, the firmware timeout still applies.</p></details>
+    <details><summary>Connection and wiring</summary><ol><li>Upload the capability-test firmware with PlatformIO.</li><li>Wire LED A to GPIO16, B to GPIO17, and C to GPIO18. Each LED needs its own 330 Ω series resistor and a cathode connection to GND.</li><li>On your phone, open this page over HTTPS in Chrome. Connect the ESP32 with your data cable or OTG adapter.</li><li>Tap Connect board, select CP2102, and accept USB permission.</li><li>Tap STOP and check for “OK: STOP; all LEDs OFF” in the board log. Then try START.</li></ol><p>If no device appears, check the cable and phone USB/OTG settings. Close other serial apps. On a computer, select Web Serial and close the PlatformIO serial monitor.</p><p>Disconnect closes the connection; it does not send STOP. Use STOP for immediate shutdown. A running sequence still ends at 2 seconds, and the board continues checking its sensor independently.</p></details>
   </main>
   <script type="module" src="app.mjs"></script>
 </body>
