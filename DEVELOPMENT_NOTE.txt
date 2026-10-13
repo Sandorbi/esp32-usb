@@ -1,0 +1,9 @@
+The LED circuit and pin connections were straightforward to put together.
+PWM was also straightforward, including mapping intensity levels 1–5 to brightness.
+The hardest part was working on minimal command latency over the USB cable.
+That mattered most for STOP, which needs to interrupt the sequence promptly.
+The firmware uses non-blocking timing so it can keep checking commands and safety.
+The test uses a simulated sensor value rather than a physical temperature sensor.
+For the full system, I have not worked with heating elements before and would need to learn more.
+I would need to research heater drivers, power requirements, temperature sensing, and calibration.
+I have limited experience building apps that connect to an ESP32 over USB, so I would research connection reliability and latency further.
